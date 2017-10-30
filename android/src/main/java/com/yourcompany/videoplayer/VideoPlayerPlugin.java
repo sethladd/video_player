@@ -13,7 +13,6 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
-import io.flutter.view.FlutterView;
 import io.flutter.view.TextureRegistry;
 import android.util.Log;
 
@@ -88,21 +87,21 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
   public static void registerWith(Registrar registrar) {
     final MethodChannel channel = new MethodChannel(registrar.messenger(), "video_player");
-    channel.setMethodCallHandler(new VideoPlayerPlugin(registrar.view()));
+    channel.setMethodCallHandler(new VideoPlayerPlugin(registrar.textures()));
   }
 
-  private VideoPlayerPlugin(FlutterView view) {
-    this.view = view;
+  private VideoPlayerPlugin(TextureRegistry textures) {
+    this.textures = textures;
+    this.videoPlayers = new HashMap<>();
   }
 
-  static final String TAG = "FlutterView";
-  static private Map<Long, VideoPlayer> videoPlayers = new HashMap<>();
-  private final FlutterView view;
+  private final Map<Long, VideoPlayer> videoPlayers;
+  private final TextureRegistry textures;
 
   @Override
   public void onMethodCall(MethodCall call, Result result) {
     if (call.method.equals("create")) {
-      TextureRegistry.SurfaceTextureEntry handle = view.createSurfaceTexture();
+      TextureRegistry.SurfaceTextureEntry handle = textures.createSurfaceTexture();
       videoPlayers.put(handle.id(), new VideoPlayer(handle, (String)call.argument("dataSource"), result));
     } else if (call.method.equals("play")) {
       long textureId = ((Number)call.argument("textureId")).longValue();
