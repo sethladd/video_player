@@ -1,19 +1,38 @@
 #import <AVFoundation/AVFoundation.h>
 #import "VideoPlayerPlugin.h"
 
-@interface VideoPlayer: NSObject<FlutterTexture>
-@property(readonly, nonatomic) int64_t textureId;
+@interface FrameUpdater : NSObject
+@property(nonatomic) int64_t textureId;
+@property(nonatomic, readonly) NSObject<FlutterTextureRegistry>* registry;
+- (void)onDisplayLink:(CADisplayLink*)link;
+@end
+
+@implementation FrameUpdater
+- (FrameUpdater*)initWithRegistry:(NSObject<FlutterTextureRegistry>*)registry {
+  NSAssert(self, @"super init cannot be nil");
+  if (self == nil) return nil;
+  _registry = registry;
+  return self;
+}
+
+- (void)onDisplayLink:(CADisplayLink*)link {
+  [_registry textureFrameAvailable:_textureId];
+}
+@end
+
+@interface VideoPlayer : NSObject<FlutterTexture>
 @property(readonly, nonatomic) AVPlayer* player;
 @property(readonly, nonatomic) AVPlayerItemVideoOutput* videoOutput;
 @property(readonly, nonatomic) CADisplayLink* displayLink;
-@property(nonatomic, copy) void (^onFrameAvailable)();
-- (instancetype)initWithURL:(NSURL*)url;
+- (instancetype)initWithURL:(NSURL*)url
+               frameUpdater:(FrameUpdater*)frameUpdater;
 - (void)play;
 - (void)pause;
 @end
 
 @implementation VideoPlayer
-- (instancetype)initWithURL:(NSURL*)url {
+- (instancetype)initWithURL:(NSURL*)url
+               frameUpdater:(FrameUpdater*)frameUpdater {
   self = [super init];
   NSAssert(self, @"super init cannot be nil");
   _player = [[AVPlayer alloc] init];
@@ -49,7 +68,7 @@
           }
       }
   }];
-  _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(onDisplayLink:)];
+  _displayLink = [CADisplayLink displayLinkWithTarget:frameUpdater selector:@selector(onDisplayLink:)];
   [_displayLink addToRunLoop:[NSRunLoop currentRunLoop] forMode:NSRunLoopCommonModes];
   _displayLink.paused = YES;
   return self;
@@ -65,12 +84,6 @@
   _displayLink.paused = YES;
 }
 
-- (void)onDisplayLink:(CADisplayLink*)link {
-  if (_onFrameAvailable) {
-    _onFrameAvailable();
-  }
-}
-
 - (CVPixelBufferRef)copyPixelBuffer {
   CMTime outputItemTime = [_videoOutput itemTimeForHostTime:CACurrentMediaTime()];
   if ([_videoOutput hasNewPixelBufferForItemTime:outputItemTime]) {
@@ -81,7 +94,7 @@
 }
 @end
 
-@interface VideoPlayerPlugin()
+@interface VideoPlayerPlugin ()
 @property(readonly, nonatomic) NSObject<FlutterTextureRegistry>* registry;
 @property(readonly, nonatomic) NSMutableDictionary* players;
 @end
@@ -107,12 +120,14 @@
   if ([@"create" isEqualToString:call.method]) {
     NSDictionary* argsMap = call.arguments;
     NSString* dataSource = argsMap[@"dataSource"];
-    VideoPlayer* player = [[VideoPlayer alloc] initWithURL:[NSURL URLWithString:dataSource]];
+    FrameUpdater* frameUpdater =
+        [[FrameUpdater alloc] initWithRegistry:_registry];
+    VideoPlayer* player =
+        [[VideoPlayer alloc] initWithURL:[NSURL URLWithString:dataSource]
+                            frameUpdater:frameUpdater];
     int64_t textureId = [_registry registerTexture:player];
+    frameUpdater.textureId = textureId;
     _players[@(textureId)] = player;
-    player.onFrameAvailable = ^{
-      [_registry textureFrameAvailable:textureId];
-    };
     result(@(textureId));
   } else {
     NSDictionary* argsMap = call.arguments;
